@@ -72,10 +72,15 @@ team_t team = {
 #define PPA(bp)             (*(void **)(bp + GET_SIZE(NH(bp))))         //Returns prev free node address
 #define NF(bp)              ((void *)(bp) + (GET_SIZE(NH(bp)) + WSIZE)) //Returns Node footer address
 
+#define LNF(bp)             ((void *)(bp) - (NODESIZE - WSIZE))
+#define LASTN(bp)           ((void *)(bp) - (GET_SIZE(LNF(bp)) + NODESIZE))
+#define NEXTN(bp)           ((void *)(bp) + (GET_SIZE(NH(bp)) + NODESIZE))
+
 void print_list();
 void print_block(void *node);
 void *find_fit(size_t size);
 void split(void *bp, size_t size);
+void coalesce();
 void add_node(void *bp);
 void rm_node(void *bp);
 
@@ -124,9 +129,9 @@ void print_block(void *node)
     printf("Header: %p\n", NH(node));
     printf("H_size = %d\n", GET_SIZE(NH(node)));
     //printf("Next node: %p\n", NP(node));
-    printf("Next node address: %p\n", NPA(node));
+    //printf("Next node address: %p\n", NPA(node));
     //printf("Prev node: %p\n", PP(node));
-    printf("Prev node address: %p\n", PPA(node));
+    //printf("Prev node address: %p\n", PPA(node));
     printf("Footer: %p\n", NF(node));
     printf("F_size = %d\n\n", GET_SIZE(NF(node)));
     fflush(stdout);
@@ -301,6 +306,11 @@ void split(void *bp, size_t size)
     add_node(node);
 }
 
+void coalesce()
+{
+    return;    
+}
+
 void add_node(void *bp)
 {
     if(NPA(head) == NULL)
@@ -323,7 +333,7 @@ void rm_node(void *bp)
     if(PPA(bp) == NULL)         //First after head
     {
         NPA(head) = NPA(bp);    //head->next = bp->next
-        if(NPA(bp) != NULL)
+        if(NPA(bp) != NULL)     //If it's not the only free block
         {
             PPA(NPA(bp)) = NULL;//bp->next->prev = NULL
         }
