@@ -54,6 +54,7 @@ team_t team = {
 #define WSIZE 4
 #define DSIZE 8
 #define NODESIZE 16
+#define MIN_SIZE 32
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size)         (((size) + (ALIGNMENT-1)) & ~0x7)
@@ -152,9 +153,10 @@ void *mm_malloc(size_t size)
     {
         size_t total;
         size_t alloc;
-        total = GET_SIZE(NH(bp)) + NODESIZE;
-        alloc = asize + NODESIZE;
-        if((total - alloc - NODESIZE) >= 32)
+        total = GET_SIZE(NH(bp)) + NODESIZE;    //Total size of block found
+        alloc = asize + NODESIZE;               //Size of block we need to allocate
+        total = total - alloc;                  //Size of leftover block
+        if((int)total >= (int)MIN_SIZE)
         {
             split(bp, asize);
         }
@@ -272,14 +274,16 @@ void *find_fit(size_t size)
 void split(void *bp, size_t size)
 {
     rm_node(bp);
-    size_t total;
-    size_t alloc_node;
+    //size_t total;
+    //size_t alloc_node;
     size_t nfsize;
     void *node;
 
-    total = GET_SIZE(NH(bp)) + NODESIZE;
-    alloc_node = size + NODESIZE;
-    nfsize = total - alloc_node - NODESIZE; //New free node size
+    //total = GET_SIZE(NH(bp)) + NODESIZE;
+    //alloc_node = size + NODESIZE;
+    //nfsize = total - alloc_node - NODESIZE; //New free node size
+
+    nfsize = GET_SIZE(NH(bp)) - size - NODESIZE;
 
     //alloc_node creation
     PUT(NH(bp), PACK(size, 1));
