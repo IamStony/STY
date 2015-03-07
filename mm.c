@@ -25,24 +25,24 @@
  * struct that follows.
  *
  * === User information ===
- * Group: 
- * User 1: 
- * SSN: X
- * User 2: 
- * SSN: X
+ * Group: Veitekki 
+ * User 1: kristinnj13
+ * SSN: 1508932409
+ * User 2: steinara13
+ * SSN: 2404932259
  * === End User Information ===
  ********************************************************/
 team_t team = {
     /* Group name */
-    "STY15_Forever",
+    "Veitekki",
     /* First member's full name */
-    "Freysteinn Alfredsson",
+    "Kristinn Júlíusson",
     /* First member's email address */
-    "freysteinn@ru.is",
+    "kristinnj13@ru.is",
     /* Second member's full name (leave blank if none) */
-    "",
+    "Steinar Þór Árnason",
     /* Second member's email address (leave blank if none) */
-    "",
+    "steinara13@ru.is",
     /* Leave blank */
     "",
     /* Leave blank */
