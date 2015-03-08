@@ -77,11 +77,12 @@ team_t team = {
 #define NEXTN(bp)           ((void *)(bp) + (GET_SIZE(NH(bp)) + NODESIZE))
 
 void print_list();
-void print_block(void *node);
-void print_lcn(void *node);
+void print_heap();
+void print_node(void *node);
+void print_pcn(void *node);
+void *coalesce(void *bp);
 void *find_fit(size_t size);
 void split(void *bp, size_t size);
-void coalesce();
 void add_node(void *bp);
 void rm_node(void *bp);
 
@@ -109,7 +110,7 @@ int mm_init(void)
     PUT(PP(head), 0);
     PUT(NF(head), PACK(0, 1));
 
-    //print_block(head);
+    //print_node(head);
 
     return 0;
 }
@@ -119,11 +120,24 @@ void print_list()
     void *bp;
     for(bp = head; bp != NULL; bp = NPA(bp))
     {
-        print_block(bp);
+        print_node(bp);
     }
 }
 
-void print_block(void *node) 
+void print_heap()
+{
+    void *bp;
+    int i = -1;
+    for(bp = head; bp < (void *)mem_heap_hi(); bp = NEXTN(bp))
+    {
+        printf("Node: %d\n", i);
+        print_node(bp);
+        i = i + 1;
+    }
+    printf("Mem heap hi: %p\n\n", (void *)mem_heap_hi());
+}
+
+void print_node(void *node) 
 {
     //printf("Printing node block:\n");
     printf("%s block.\n", IS_ALLOC(NH(node))?"Allocated":"Free");
@@ -139,15 +153,16 @@ void print_block(void *node)
     fflush(stdout);
 }
 
-void print_lcn(void *node)
+void print_pcn(void *node)
 {
-    printf("- - - - - - - - - - - - - - - - - - -");
-    print_block(LASTN(node));
-    printf("                - -                  ");
-    print_block(node);
-    printf("                - -                  ");
-    print_block(NEXTN(node));
-    printf("- - - - - - - - - - - - - - - - - - -");
+    printf("- - - - - - - - - - - - - - - - - - -\n");
+    print_node(LASTN(node));
+    printf("                - -                  \n");
+    print_node(node);
+    printf("                - -                  \n");
+    print_node
+    (NEXTN(node));
+    printf("- - - - - - - - - - - - - - - - - - -\n");
 }
 
 /* 
@@ -172,7 +187,7 @@ void *mm_malloc(size_t size)
     if(bp != NULL)
     {
         size_t leftover;
-        leftover = GET_SIZE(NH(bp)) - asize;          //Size of space
+        leftover = GET_SIZE(NH(bp)) - asize;          //Size of leftover space
         //If leftover space is enough to create a new node 
         //AND has a size >= 16 then we make a new free block
         if((int)leftover >= (int)MIN_SIZE)
@@ -183,8 +198,6 @@ void *mm_malloc(size_t size)
         {
             rm_node(bp);
             PUT(NH(bp), PACK(asize, 1));
-            PUT(NP(bp), 0);
-            PUT(PP(bp), 0);
             PUT(NF(bp), PACK(asize, 1));
         }
     }
@@ -227,9 +240,44 @@ void mm_free(void *bp)
 
         PUT(NH(bp), PACK(size, 0));
         PUT(NF(bp), PACK(size, 0));
-
-        add_node(bp);
+        coalesce(bp);
+        //add_node(bp);
     }
+}
+
+void *coalesce(void *bp)
+{
+    //printf("Called coalesce.\n");
+    void *p, *n;
+    p = LASTN(bp);  //Previous node
+    n = NEXTN(bp);  //Next node
+
+    size_t prev_alloc = IS_ALLOC(NH(p));    //Previous node alloc bit
+    size_t next_alloc = IS_ALLOC(NH(n));    //Next node alloc bit
+    size_t size = GET_SIZE(NH(bp));         //Size of current node payload
+    if(n > (void *)mem_heap_hi())
+    {
+        //printf("n is outside mem_heap_hi()\n");
+        next_alloc = 1;
+    }
+    if(!next_alloc)     //If next node is free
+    {
+        size += GET_SIZE(NH(n)) + NODESIZE;
+        rm_node(n);                 //Removes next node from free list
+        PUT(NH(bp), PACK(size, 0));
+        PUT(NF(bp), PACK(size, 0));
+    }
+    if(!prev_alloc)
+    {
+        size += GET_SIZE(NH(p)) + NODESIZE;
+        rm_node(p);                 //Removes previous node from free list
+        bp = p;                     //Moves us the the previous nodes payload address
+        PUT(NH(bp), PACK(size, 0));
+        PUT(NF(bp), PACK(size, 0));
+    }
+
+    add_node(bp);   //Adds coalesced node to free list
+    return NULL;
 }
 
 /*
@@ -237,7 +285,7 @@ void mm_free(void *bp)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    return NULL;
+    //return NULL;
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
@@ -293,23 +341,12 @@ void split(void *bp, size_t size)
     PUT(PP(node), 0);
     PUT(NF(node), PACK(losize, 0));
 
-    add_node(node); //Add the new free node to the list
-}
-
-void coalesce()
-{
-    return;    
+    coalesce(node);
+    //add_node(node); //Add the new free node to the list
 }
 
 void add_node(void *bp)
 {
-    if(!NP(bp) || !PP(bp))
-    {
-        printf("Not setting nodes up correctly, fix it stupid. (add_node)\n");
-        fflush(stdout);
-        print_block(bp);
-        return;        
-    }
     if(NPA(head) == NULL)       //If the free list is empty
     {
         NPA(head) = bp;         //head->next = bp;
@@ -320,6 +357,7 @@ void add_node(void *bp)
         NPA(head) = bp;         //head-> next = bp
         PPA(NPA(bp)) = bp;      //bp->next->prev = bp
     }
+    PUT(PP(bp), 0);             //bp->prev = NULL
 }
 
 void rm_node(void *bp)
@@ -341,4 +379,6 @@ void rm_node(void *bp)
         NPA(PPA(bp)) = NPA(bp); //bp->prev->next = current->next
         PPA(NPA(bp)) = PPA(bp); //bp->next->prev = current->prev
     }
+    PUT(NP(bp), 0);             //bp->next = NULL
+    PUT(PP(bp), 0);             //bp->prev = NULL
 }
