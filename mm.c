@@ -78,6 +78,7 @@ team_t team = {
 
 void print_list();
 void print_block(void *node);
+void print_lcn(void *node);
 void *find_fit(size_t size);
 void split(void *bp, size_t size);
 void coalesce();
@@ -129,12 +130,24 @@ void print_block(void *node)
     printf("Header: %p\n", NH(node));
     printf("H_size = %d\n", GET_SIZE(NH(node)));
     //printf("Next node: %p\n", NP(node));
-    //printf("Next node address: %p\n", NPA(node));
+    printf("Next node address: %p\n", NPA(node));
+    printf("Payload: %p\n", node);
     //printf("Prev node: %p\n", PP(node));
-    //printf("Prev node address: %p\n", PPA(node));
+    printf("Prev node address: %p\n", PPA(node));
     printf("Footer: %p\n", NF(node));
     printf("F_size = %d\n\n", GET_SIZE(NF(node)));
     fflush(stdout);
+}
+
+void print_lcn(void *node)
+{
+    printf("- - - - - - - - - - - - - - - - - - -");
+    print_block(LASTN(node));
+    printf("                - -                  ");
+    print_block(node);
+    printf("                - -                  ");
+    print_block(NEXTN(node));
+    printf("- - - - - - - - - - - - - - - - - - -");
 }
 
 /* 
@@ -146,9 +159,11 @@ void *mm_malloc(size_t size)
     size_t asize; //Aligned size
     void *bp;
 
-    //Ignor spurious requests
-    if(size <= 0)
+    //Ignore spurious requests
+    if(size < (size_t)1)
+    {
         return NULL;
+    }
 
     asize = ALIGN(size);
 
@@ -156,12 +171,11 @@ void *mm_malloc(size_t size)
 
     if(bp != NULL)
     {
-        size_t total;
-        size_t alloc;
-        total = GET_SIZE(NH(bp)) + NODESIZE;    //Total size of block found
-        alloc = asize + NODESIZE;               //Size of block we need to allocate
-        total = total - alloc;                  //Size of leftover block
-        if((int)total >= (int)MIN_SIZE)
+        size_t leftover;
+        leftover = GET_SIZE(NH(bp)) - asize;          //Size of space
+        //If leftover space is enough to create a new node 
+        //AND has a size >= 16 then we make a new free block
+        if((int)leftover >= (int)MIN_SIZE)
         {
             split(bp, asize);
         }
@@ -169,9 +183,9 @@ void *mm_malloc(size_t size)
         {
             rm_node(bp);
             PUT(NH(bp), PACK(asize, 1));
-            PUT(NF(bp), PACK(asize, 1));
             PUT(NP(bp), 0);
             PUT(PP(bp), 0);
+            PUT(NF(bp), PACK(asize, 1));
         }
     }
     else
@@ -191,7 +205,7 @@ void *mm_malloc(size_t size)
         }
         else
         {
-            bp += DSIZE;
+            bp += DSIZE;    //Puts us at payload
             PUT(NH(bp), PACK(asize, 1));
             PUT(NP(bp), 0);
             PUT(PP(bp), 0);
@@ -200,34 +214,21 @@ void *mm_malloc(size_t size)
     }
     
     return bp;
-
-    /* OLD GIVEN IN HANDOUT
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    if (p == (void *)-1)
-        return NULL;
-    else {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
-    }*/
 }
 
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
-    if(ptr == NULL)
+    if(bp != NULL)
     {
-        return;
-    }
-    else
-    {
-        size_t size = GET_SIZE(NH(ptr));
+        size_t size = GET_SIZE(NH(bp));
 
-        PUT(NH(ptr), PACK(size, 0));
-        PUT(NF(ptr), PACK(size, 0));
-        add_node(ptr);
+        PUT(NH(bp), PACK(size, 0));
+        PUT(NF(bp), PACK(size, 0));
+
+        add_node(bp);
     }
 }
 
@@ -258,17 +259,11 @@ void *mm_realloc(void *ptr, size_t size)
 void *find_fit(size_t size)
 {
     void *bp;
-    if(NPA(head) == NULL) 
+
+    for(bp = NPA(head); bp != NULL; bp = NPA(bp))
     {
-        return NULL;
-    }
-    //printf("Size we looking for = %d\n\n", size);
-    for(bp = head; bp != NULL; bp = NPA(bp))
-    {
-        //print_block(bp);
         if(size <= GET_SIZE(NH(bp)))
         {
-            //printf("Found block with enough payload (%d)\nHeader: %p\n", GET_SIZE(NH(bp)), NH(bp));
             return bp;
         }
     }
@@ -278,32 +273,27 @@ void *find_fit(size_t size)
 
 void split(void *bp, size_t size)
 {
-    rm_node(bp);
-    //size_t total;
-    //size_t alloc_node;
-    size_t nfsize;
+    rm_node(bp);    //Removes the node from the free list
+    
+    size_t losize;  //Leftover size
     void *node;
 
-    //total = GET_SIZE(NH(bp)) + NODESIZE;
-    //alloc_node = size + NODESIZE;
-    //nfsize = total - alloc_node - NODESIZE; //New free node size
+    losize = GET_SIZE(NH(bp)) - size - NODESIZE; //Just the payload, ignoring the space used for node creation
 
-    nfsize = GET_SIZE(NH(bp)) - size - NODESIZE;
-
-    //alloc_node creation
+    //Allocate the split node, using the space we need
     PUT(NH(bp), PACK(size, 1));
     PUT(NP(bp), 0);
     PUT(PP(bp), 0);
     PUT(NF(bp), PACK(size, 1));
 
-    //new_free_node creation
-    node = bp + (size + NODESIZE);
-    PUT(NH(node), PACK(nfsize, 0));
+    //Create the new 'empty' node
+    node = bp + (size + NODESIZE);  //Puts us at the payload of the new node
+    PUT(NH(node), PACK(losize, 0));
     PUT(NP(node), 0);
     PUT(PP(node), 0);
-    PUT(NF(node), PACK(nfsize, 0));
+    PUT(NF(node), PACK(losize, 0));
 
-    add_node(node);
+    add_node(node); //Add the new free node to the list
 }
 
 void coalesce()
@@ -313,41 +303,42 @@ void coalesce()
 
 void add_node(void *bp)
 {
-    if(NPA(head) == NULL)
+    if(!NP(bp) || !PP(bp))
     {
-        NPA(head) = bp;
+        printf("Not setting nodes up correctly, fix it stupid. (add_node)\n");
+        fflush(stdout);
+        print_block(bp);
+        return;        
     }
-    else
+    if(NPA(head) == NULL)       //If the free list is empty
     {
-        NPA(bp) = NPA(head);
-        NPA(head) = bp;
-        PPA(NPA(bp)) = bp;
+        NPA(head) = bp;         //head->next = bp;
     }
-    //printf("CALLING PRINT LIST (add_node)\n\n");
-    //print_list();
-    //printf("FINISHED PRINT LIST (add_node)\n\n");
+    else                        //Put it to the front of the list
+    {
+        NPA(bp) = NPA(head);    //bp->next = head->next
+        NPA(head) = bp;         //head-> next = bp
+        PPA(NPA(bp)) = bp;      //bp->next->prev = bp
+    }
 }
 
 void rm_node(void *bp)
 {
-    if(PPA(bp) == NULL)         //First after head
+    if(PPA(bp) == NULL)         //If bp->prev is NULL we're the first free node
     {
         NPA(head) = NPA(bp);    //head->next = bp->next
-        if(NPA(bp) != NULL)     //If it's not the only free block
+        if(NPA(bp) != NULL)     //If bp is pointing to another free node
         {
             PPA(NPA(bp)) = NULL;//bp->next->prev = NULL
         }
     }
     else if(NPA(bp) == NULL)    //Last in list
     {
-        NPA(PPA(bp)) = NULL;    //current->prev->next = NULL
+        NPA(PPA(bp)) = NULL;    //bp->prev->next = NULL
     }
     else                        //Somewhere inbetween
     {
-        NPA(PPA(bp)) = NPA(bp); //current->prev->next = current->next
-        PPA(NPA(bp)) = PPA(bp); //current->next->prev = current->prev
+        NPA(PPA(bp)) = NPA(bp); //bp->prev->next = current->next
+        PPA(NPA(bp)) = PPA(bp); //bp->next->prev = current->prev
     }
-    //printf("CALLING PRINT LIST (rm_node)\n\n");
-    //print_list();
-    //printf("FINISHED PRINT LIST (rm_node)\n\n");
 }
