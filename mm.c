@@ -197,8 +197,8 @@ void *mm_malloc(size_t size)
         else
         {
             rm_node(bp);
-            PUT(NH(bp), PACK(asize, 1));
-            PUT(NF(bp), PACK(asize, 1));
+            PUT(NH(bp), PACK(GET_SIZE(NH(bp)), 1));
+            PUT(NF(bp), PACK(GET_SIZE(NH(bp)), 1));
         }
     }
     else
