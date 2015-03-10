@@ -82,24 +82,24 @@ team_t team = {
 #define MIN_SIZE 32
 
 /* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size)         (((size) + (ALIGNMENT-1)) & ~0x7)
+#define ALIGN(size)         (((size) + (ALIGNMENT-1)) & ~0x7)               //Align size to 8 bytes
 #define SIZE_T_SIZE         (ALIGN(sizeof(size_t)))
-#define PACK(size, alloc)   ((size) | (alloc))          //Packs the size and allocated bit into a word
-#define GET(bp)             (*(size_t *)(bp))           //Returns the word at address bp
-#define PUT(bp, value)      (*(size_t *)(bp) = (value)) //Sets the word at address bp
-#define GET_SIZE(bp)        (GET(bp) & ~0x7)            //Returns the size
-#define IS_ALLOC(bp)        (GET(bp) & 0x1)             //Checks if node is allocated
+#define PACK(size, alloc)   ((size) | (alloc))                              //Packs the size and allocated bit into a word
+#define GET(bp)             (*(size_t *)(bp))                               //Returns the word at address bp
+#define PUT(bp, value)      (*(size_t *)(bp) = (value))                     //Sets the word at address bp
+#define GET_SIZE(bp)        (GET(bp) & ~0x7)                                //Returns the size
+#define IS_ALLOC(bp)        (GET(bp) & 0x1)                                 //Checks if node is allocated
 //Node macros
-#define NH(bp)              ((void *)(bp) - DSIZE)                      //Returns Node header address
-#define NP(bp)              ((void *)(bp) - WSIZE)                      //Next node address (self)
-#define NPA(bp)             (*(void **)(bp - WSIZE))                    //Returns next free node address
-#define PP(bp)              ((void *)(bp) + GET_SIZE(NH(bp)))           //Prev node address (self)
-#define PPA(bp)             (*(void **)(bp + GET_SIZE(NH(bp))))         //Returns prev free node address
-#define NF(bp)              ((void *)(bp) + (GET_SIZE(NH(bp)) + WSIZE)) //Returns Node footer address
+#define NH(bp)              ((void *)(bp) - DSIZE)                          //Returns Node header address
+#define NP(bp)              ((void *)(bp) - WSIZE)                          //Next node address (self)
+#define NPA(bp)             (*(void **)(bp - WSIZE))                        //Returns next free node address
+#define PP(bp)              ((void *)(bp) + GET_SIZE(NH(bp)))               //Prev node address (self)
+#define PPA(bp)             (*(void **)(bp + GET_SIZE(NH(bp))))             //Returns prev free node address
+#define NF(bp)              ((void *)(bp) + (GET_SIZE(NH(bp)) + WSIZE))     //Returns Node footer address
 
-#define LNF(bp)             ((void *)(bp) - (NODESIZE - WSIZE))
-#define LASTN(bp)           ((void *)(bp) - (GET_SIZE(LNF(bp)) + NODESIZE))
-#define NEXTN(bp)           ((void *)(bp) + (GET_SIZE(NH(bp)) + NODESIZE))
+#define LNF(bp)             ((void *)(bp) - (NODESIZE - WSIZE))             //Prev node footer (on heap)
+#define LASTN(bp)           ((void *)(bp) - (GET_SIZE(LNF(bp)) + NODESIZE)) //Returns prev free node address (on heap)
+#define NEXTN(bp)           ((void *)(bp) + (GET_SIZE(NH(bp)) + NODESIZE))  //Returns next free node address (on heap)
 
 //All print functions we're used for debuggin purposes
 void print_list();
@@ -237,10 +237,11 @@ void *mm_malloc(size_t size)
     }
     else
     {
-        size_t nnsize; //New Node Size
+        size_t nnsize;                  //New Node Size
+        size_t page = mem_pagesize();   //Extra node payload
         nnsize = asize + NODESIZE;
 
-        bp = mem_sbrk(nnsize);
+        bp = mem_sbrk(nnsize + page + NODESIZE);    //Extends the heap by the new node size and extra node
         //if sbrk was unsuccessful
         if((long)bp == -1)
         {
@@ -253,6 +254,15 @@ void *mm_malloc(size_t size)
             PUT(NP(bp), 0);               //bp->next = NULL
             PUT(PP(bp), 0);               //bp->prev = NULL
             PUT(NF(bp), PACK(asize, 1));  //Sets the footer
+            
+            //printf("mem_page = %d\n", mem_pagesize());
+            void *extra;                  //Extra node
+            extra = NEXTN(bp);            //Place us at its' payload
+            PUT(NH(extra), PACK(page, 0));//Sets the header
+            PUT(NP(extra), 0);            //extra->next = NULL
+            PUT(PP(extra), 0);            //extra->prev = NULL
+            PUT(NF(extra), PACK(page, 0));//Sets the footer
+            add_node(extra);              //Adds the extra node to the free list
         }
     }
     
@@ -312,7 +322,7 @@ void coalesce(void *bp)
 }
 
 /*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
+ * mm_realloc - First fit version of realloc
  */
 void *mm_realloc(void *ptr, size_t size)
 {
@@ -366,7 +376,7 @@ void split(void *bp, size_t size)
     PUT(PP(bp), 0);
     PUT(NF(bp), PACK(size, 1));
 
-    //Create the new 'empty' node with the leftover size (-16 bytes for creating the new node)
+    //Create the new 'empty' node with the leftover size
     node = bp + (size + NODESIZE);  //Puts us at the payload of the new node
     PUT(NH(node), PACK(losize, 0));
     PUT(NP(node), 0);
